@@ -1,0 +1,6 @@
+# Development only (ADR-058): the console is published to the loopback of the host, never to the network. The S3 API is
+# never published; in qa and main the storage is operated from a container on the platform network.
+services:
+  rustfs:
+    ports:
+      - "127.0.0.1:${RUSTFS_CONSOLE_PORT:-9001}:9001"
