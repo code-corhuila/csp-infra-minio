@@ -1,0 +1,2 @@
+# Files are run inside Linux containers: never let Git convert them to CRLF.
+* text=auto eol=lf
