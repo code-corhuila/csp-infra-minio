@@ -75,7 +75,7 @@ over 1 MiB (norm 5.3.10) before writing it.
 ## Rules
 
 - **No secret is versioned.** `env/*.env.example` carries names and placeholders only.
-- **Single node, named volume.** A lost volume loses the PDFs; they can be rendered again from the tickets.
+- **Single node, named volume.** A lost volume loses the PDFs and their versions. The setup recreates the bucket, its rules and the accounts, but nothing renders a ticket again once its reference is recorded (TD-051 in `csp-docs`), so back up the volume if the PDFs matter.
 - **The setup is idempotent** and re-applies the bucket, the rule, the quota, the policies and the accounts at every `up`.
   It does not remove what the script no longer lists (use `rc` from a container, or drop the volume in dev).
 - The 30-day rule is stored and listed by RustFS; its expiry runs in the storage and was not observed here, because it
