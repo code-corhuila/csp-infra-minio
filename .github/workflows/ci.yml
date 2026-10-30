@@ -1,0 +1,65 @@
+name: CI
+
+# The storage must start from nothing, be set up twice, keep the bucket private and versioned, expire non-current
+# versions, refuse writes over the quota, keep each account inside its permissions, publish no S3 port, publish the
+# console to the loopback only in dev and survive a restart (ADR-058). The same composition is checked twice: as dev and
+# as qa/main.
+
+on:
+  pull_request:
+    branches: [develop, qa, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: csp-ci-rustfs
+      COMPOSE_PATH_SEPARATOR: ":"
+      RUSTFS_ROOT_USER: ci-root
+      RUSTFS_ROOT_PASSWORD: ci-root-password
+      TICKETS_BUCKET: tickets
+      TICKETS_BUCKET_QUOTA: 1G
+      TICKETING_PDF_WRITER_SECRET: ci-writer-secret
+      TICKETING_PDF_READER_SECRET: ci-reader-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the shell scripts
+        run: for f in scripts/*.sh tests/*.sh rustfs/*.sh; do sh -n "$f"; done
+
+      - name: Validate the composition
+        run: |
+          docker network create platform
+          COMPOSE_FILE=compose.yml:compose.dev.yml docker compose --profile setup config --quiet
+          COMPOSE_FILE=compose.yml docker compose --profile setup config --quiet
+
+      - name: Start the storage as dev
+        run: COMPOSE_FILE=compose.yml:compose.dev.yml docker compose up -d --wait rustfs
+
+      - name: Check bucket, rules, accounts, ports and restart as dev
+        run: COMPOSE_FILE=compose.yml:compose.dev.yml sh tests/instance.sh dev
+
+      - name: Start the storage as qa and main
+        run: |
+          COMPOSE_FILE=compose.yml:compose.dev.yml docker compose down -v
+          COMPOSE_FILE=compose.yml docker compose up -d --wait rustfs
+
+      - name: Check that nothing is published as qa and main
+        run: COMPOSE_FILE=compose.yml sh tests/instance.sh qa
+
+      - name: Show the log when a step failed
+        if: failure()
+        run: COMPOSE_FILE=compose.yml docker compose logs rustfs
+
+      - name: Clean up
+        if: always()
+        run: COMPOSE_FILE=compose.yml docker compose down -v

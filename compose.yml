@@ -1,0 +1,50 @@
+# The single object storage of the platform (ADR-058): the private bucket `tickets` with the PDF of every ticket. The
+# project name comes from COMPOSE_PROJECT_NAME of the env file (csp-dev, csp-qa, csp-main), so every environment has its
+# own container and volume (J.5.1).
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ROOT_USER:?set RUSTFS_ROOT_USER}
+      RUSTFS_SECRET_KEY: ${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD}
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # expose, not ports: the S3 API is reachable only from the platform network. The console is published to the
+    # loopback of the host only in dev (compose.dev.yml).
+    expose: ["9000", "9001"]
+    networks: [platform]
+
+  # One-shot job: creates the bucket, its rules and the two accounts of the services. It is idempotent and holds the
+  # root credentials only while it runs. Run it with `docker compose run --rm setup` after the storage is healthy
+  # (scripts/up.sh does it).
+  setup:
+    image: rustfs/rc:v0.1.36
+    profiles: [setup]
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    entrypoint: ["sh", "-s"]
+    stdin_open: true
+    environment:
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_ROOT_USER: ${RUSTFS_ROOT_USER:?set RUSTFS_ROOT_USER}
+      RUSTFS_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD}
+      TICKETS_BUCKET: ${TICKETS_BUCKET:-tickets}
+      TICKETS_BUCKET_QUOTA: ${TICKETS_BUCKET_QUOTA:?set TICKETS_BUCKET_QUOTA}
+      TICKETING_PDF_WRITER_SECRET: ${TICKETING_PDF_WRITER_SECRET:?set TICKETING_PDF_WRITER_SECRET}
+      TICKETING_PDF_READER_SECRET: ${TICKETING_PDF_READER_SECRET:?set TICKETING_PDF_READER_SECRET}
+    networks: [platform]
+
+volumes:
+  rustfs-data:
+
+networks:
+  platform:
+    name: platform
+    external: true
